@@ -148,6 +148,9 @@ void requestHandle(int fd, time_stats tm_stats, threads_stats t_stats, server_lo
     int body_len = 0;
     char resp_headers[MAXBUF];
 
+    // ALL requests (including errors) increment the total request counter
+    t_stats->total_req++;
+
     Rio_readinitb(&rio, fd);
     Rio_readlineb(&rio, buf, MAXLINE);
     sscanf(buf, "%s %s %s", method, uri, version);
@@ -170,7 +173,14 @@ void requestHandle(int fd, time_stats tm_stats, threads_stats t_stats, server_lo
             body_len = sbuf.st_size;
             body_content = requestPrepareStatic(filename, body_len);
 
-            // Fixed Content-Length format string and sprintf overlap
+            // Valid static request: update the counter BEFORE logging/responding
+            // so this request is reflected in its own stats
+            t_stats->stat_req++;
+
+            // GET is a WRITER: append this request's stats to the log.
+            // Fills tm_stats.log_enter / tm_stats.log_exit.
+            add_to_log(log, &tm_stats, t_stats);
+
             sprintf(resp_headers, "HTTP/1.0 200 OK\r\n");
             sprintf(resp_headers + strlen(resp_headers), "Server: OS-HW3 Web Server\r\n");
             sprintf(resp_headers + strlen(resp_headers), "Content-Length: %d\r\n", body_len);
@@ -182,11 +192,22 @@ void requestHandle(int fd, time_stats tm_stats, threads_stats t_stats, server_lo
             }
             body_content = requestPrepareDynamic(filename, cgiargs, &body_len);
 
+            // Valid dynamic request
+            t_stats->dynm_req++;
+
+            // GET is a WRITER: append this request's stats to the log
+            add_to_log(log, &tm_stats, t_stats);
+
             sprintf(resp_headers, "HTTP/1.0 200 OK\r\n");
             sprintf(resp_headers + strlen(resp_headers), "Server: OS-HW3 Web Server\r\n");
         }
     } else if (strcasecmp(method, "POST") == 0) {
-        body_len = get_log(log, (char**)&body_content);
+        // Valid POST request
+        t_stats->post_req++;
+
+        // POST is a READER: retrieve the whole log.
+        // Fills tm_stats.log_enter / tm_stats.log_exit.
+        body_len = get_log(log, (char**)&body_content, &tm_stats);
 
         sprintf(resp_headers, "HTTP/1.0 200 OK\r\n");
         sprintf(resp_headers + strlen(resp_headers), "Server: OS-HW3 Web Server\r\n");

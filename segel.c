@@ -570,15 +570,46 @@ int Open_listenfd(int port)
  ****************************/
 
 /* $begin udp_open */
+// Creates a UDP socket bound to the given port on all local interfaces.
+// Returns the socket descriptor, or exits with an informative error.
 int UDP_Open(int port)
 {
-//TODO
+    int sd;
+    struct sockaddr_in addr;
+
+    if ((sd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+        unix_error("UDP socket error");
+
+    bzero((char *) &addr, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_port = htons((unsigned short)port);
+
+    if (bind(sd, (SA *) &addr, sizeof(addr)) < 0)
+        unix_error("UDP bind error");
+
+    return sd;
 }
 /* $end udp_open */
 
+// Fills a sockaddr_in for the given hostname and port.
+// hostname == NULL means INADDR_ANY. Returns 0 on success, -1 on failure.
 int UDP_FillSockAddr(struct sockaddr_in *addr, char *hostname, int port)
 {
-//TODO
+    bzero((char *) addr, sizeof(struct sockaddr_in));
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons((unsigned short)port);
+
+    if (hostname == NULL) {
+        addr->sin_addr.s_addr = htonl(INADDR_ANY);
+    } else {
+        struct hostent *hp = gethostbyname(hostname);
+        if (hp == NULL)
+            return -1;
+        bcopy((char *)hp->h_addr,
+              (char *)&addr->sin_addr.s_addr, hp->h_length);
+    }
+    return 0;
 }
 
 int UDP_Write(int sd, struct sockaddr_in *addr, char *buffer, int n)
@@ -592,5 +623,3 @@ int UDP_Read(int sd, struct sockaddr_in *addr, char *buffer, int n)
     int len = sizeof(struct sockaddr_in);
     return recvfrom(sd, buffer, n, 0, (struct sockaddr *) addr, (socklen_t *) &len);
 }
-
-
